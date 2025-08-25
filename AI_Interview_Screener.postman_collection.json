@@ -1,0 +1,522 @@
+{
+	"info": {
+		"_postman_id": "ai-interview-screener-collection",
+		"name": "AI Interview Screener API",
+		"description": "Complete API collection for the AI Interview Screener backend",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Job Descriptions",
+			"item": [
+				{
+					"name": "Create Job Description",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Senior Python Developer\",\n    \"description\": \"We are looking for a senior Python developer with 5+ years of experience in Django, Flask, and modern web development. The ideal candidate should have experience with cloud platforms (AWS/Azure), databases (PostgreSQL, MongoDB), and CI/CD pipelines. Strong problem-solving skills and experience with agile methodologies are required.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/job-descriptions/create/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"job-descriptions",
+								"create",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Job Descriptions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/job-descriptions/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"job-descriptions",
+								""
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Candidates",
+			"item": [
+				{
+					"name": "Create Candidate",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "name",
+									"value": "John Doe",
+									"type": "text"
+								},
+								{
+									"key": "email",
+									"value": "john.doe@example.com",
+									"type": "text"
+								},
+								{
+									"key": "phone",
+									"value": "{{test_phone_number}}",
+									"type": "text"
+								},
+								{
+									"key": "resume",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/candidates/create/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"candidates",
+								"create",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Candidates",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/candidates/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"candidates",
+								""
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Interviews",
+			"item": [
+				{
+					"name": "Create Interview",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_description\": \"{{job_description_id}}\",\n    \"candidate\": \"{{candidate_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/interviews/create/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"interviews",
+								"create",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Trigger Interview Call",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/interviews/{{interview_id}}/trigger/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"interviews",
+								"{{interview_id}}",
+								"trigger",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Interview Results",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/interviews/{{interview_id}}/results/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"interviews",
+								"{{interview_id}}",
+								"results",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Interviews",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/interviews/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"interviews",
+								""
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Complete Workflow Test",
+			"item": [
+				{
+					"name": "1. Create Job Description",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('job_description_id', response.id);",
+									"    console.log('Job Description ID:', response.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Full Stack Developer\",\n    \"description\": \"We are seeking a Full Stack Developer with expertise in React, Node.js, and Python. The ideal candidate should have 3+ years of experience building scalable web applications, working with REST APIs, and deploying to cloud platforms. Knowledge of Docker, Kubernetes, and CI/CD is a plus.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/job-descriptions/create/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"job-descriptions",
+								"create",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Create Candidate",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('candidate_id', response.id);",
+									"    console.log('Candidate ID:', response.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "name",
+									"value": "Jane Smith",
+									"type": "text"
+								},
+								{
+									"key": "email",
+									"value": "jane.smith@example.com",
+									"type": "text"
+								},
+								{
+									"key": "phone",
+									"value": "{{test_phone_number}}",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/candidates/create/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"candidates",
+								"create",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Create Interview",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('interview_id', response.id);",
+									"    console.log('Interview ID:', response.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_description\": \"{{job_description_id}}\",\n    \"candidate\": \"{{candidate_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/interviews/create/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"interviews",
+								"create",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. Trigger Interview Call",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/interviews/{{interview_id}}/trigger/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"interviews",
+								"{{interview_id}}",
+								"trigger",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Get Interview Results (Wait 2 minutes)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/interviews/{{interview_id}}/results/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"interviews",
+								"{{interview_id}}",
+								"results",
+								""
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "https://your-domain.com",
+			"type": "string"
+		}
+	]
+}
