@@ -263,24 +263,108 @@ class InterviewResultsView(APIView):
         try:
             interview = get_object_or_404(Interview, id=interview_id)
             
-            # Ensure all answers have transcripts
+            # Track evaluation progress
+            evaluation_results = {
+                'transcripts_generated': 0,
+                'answers_scored': 0,
+                'evaluation_completed': False,
+                'errors': []
+            }
+            
+            print(f"Step 1: Generating transcripts for interview {interview_id}")
             for question in interview.questions.all():
                 answer = question.answers.first()
-                if answer and not answer.transcript and answer.audio_file:
-                    generate_transcript_from_audio(answer)  # this will save in DB
-
-            # If interview is completed, generate final recommendation
-            if interview.status == 'completed':
-                recommendation = generate_final_recommendation(interview)
-                interview.recommendation = recommendation
-                interview.save()
+                if answer and answer.audio_file:
+                    if not answer.transcript:
+                        try:
+                            print(f"Generating transcript for question {question.question_number}")
+                            transcript = generate_transcript_from_audio(answer)
+                            if transcript:
+                                evaluation_results['transcripts_generated'] += 1
+                                print(f"✓ Transcript generated for question {question.question_number}")
+                            else:
+                                evaluation_results['errors'].append(f"Failed to generate transcript for question {question.question_number}")
+                        except Exception as e:
+                            error_msg = f"Error generating transcript for question {question.question_number}: {str(e)}"
+                            evaluation_results['errors'].append(error_msg)
+                            print(f"✗ {error_msg}")
+                    else:
+                        print(f"✓ Transcript already exists for question {question.question_number}")
             
+            print(f"Step 2: Scoring answers for interview {interview_id}")
+            for question in interview.questions.all():
+                answer = question.answers.first()
+                # if answer and answer.transcript and (answer.score is None or not answer.feedback):
+                try:
+                    print(f"Scoring answer for question {question.question_number}")
+                    score, feedback = score_answer(
+                        question.question_text,
+                        answer.transcript,
+                        interview.candidate.resume_text
+                    )
+                    
+                    answer.score = score
+                    answer.feedback = feedback
+                    answer.save()
+                    
+                    evaluation_results['answers_scored'] += 1
+                    print(f"✓ Answer scored for question {question.question_number}: {score}/10")
+                except Exception as e:
+                    error_msg = f"Error scoring answer for question {question.question_number}: {str(e)}"
+                    evaluation_results['errors'].append(error_msg)
+                    print(f"✗ {error_msg}")
+            
+            print(f"Step 3: Generating final recommendation for interview {interview_id}")
+            if interview.status == 'completed':
+                try:
+                    recommendation = generate_final_recommendation(interview)
+                    interview.recommendation = recommendation
+                    interview.save()
+                    evaluation_results['evaluation_completed'] = True
+                    print(f"✓ Final recommendation generated")
+                except Exception as e:
+                    error_msg = f"Error generating final recommendation: {str(e)}"
+                    evaluation_results['errors'].append(error_msg)
+                    print(f"✗ {error_msg}")
+            
+            total_questions = interview.questions.count()
+            answered_questions = 0
+            scored_questions = 0
+            
+            for question in interview.questions.all():
+                answer = question.answers.first()
+                if answer and answer.transcript:
+                    answered_questions += 1
+                if answer and answer.score is not None:
+                    scored_questions += 1
+            
+                evaluation_results['evaluation_completed'] = True
+            else:
+                print(f"⚠ Evaluation incomplete: {scored_questions}/{answered_questions}/{total_questions} questions scored/answered/total")
+            
+            # Step 5: Serialize and return results
             serializer = InterviewResultSerializer(interview, context={'request': request})
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            response_data = serializer.data
+            
+            # Add evaluation metadata to response
+            response_data['evaluation_metadata'] = {
+                'total_questions': total_questions,
+                'answered_questions': answered_questions,
+                'scored_questions': scored_questions,
+                'transcripts_generated': evaluation_results['transcripts_generated'],
+                'answers_scored': evaluation_results['answers_scored'],
+                'evaluation_completed': evaluation_results['evaluation_completed'],
+                'errors': evaluation_results['errors'] if evaluation_results['errors'] else None
+            }
+            
+            print(f"Interview results ready: {scored_questions}/{total_questions} questions evaluated")
+            return Response(response_data, status=status.HTTP_200_OK)
             
         except Exception as e:
+            error_msg = f"Error getting results: {str(e)}"
+            print(f"✗ {error_msg}")
             return Response(
-                {'error': f'Error getting results: {str(e)}'}, 
+                {'error': error_msg}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -351,7 +435,6 @@ class TwilioWebhookAnswerView(View):
             print(f"Recording URL: {recording_url}")
             print(f"Recording Duration: {recording_duration}")
             
-            # Download and save the recording
             if recording_url:
                 try:
                     response = requests.get(
@@ -382,7 +465,6 @@ class TwilioWebhookAnswerView(View):
                         answer, created = Answer.objects.get_or_create(question=question)
                         answer.audio_file = audio_file
                         
-                        # Save recording duration if available
                         if recording_duration:
                             try:
                                 answer.audio_duration = int(recording_duration)
@@ -396,7 +478,6 @@ class TwilioWebhookAnswerView(View):
                 except Exception as e:
                     print(f"Error downloading recording: {e}")
             
-            # Find the next question
             current_question_number = question.question_number
             next_question = interview.questions.filter(question_number__gt=current_question_number).order_by('question_number').first()
             
@@ -450,11 +531,10 @@ class TwilioWebhookStatusView(View):
             call_status = request.POST.get('CallStatus')
             
             if call_status == 'completed':
-                # Process all answers and generate scores
                 for question in interview.questions.all():
                     answer = question.answers.first()
                     if answer and answer.transcript and not answer.score:
-                        # Score the answer
+                        
                         score, feedback = score_answer(
                             question.question_text, 
                             answer.transcript, 
@@ -554,7 +634,6 @@ class AudioFilesByInterviewView(APIView):
         try:
             interview = get_object_or_404(Interview, id=interview_id)
             
-            # Get all answers for this interview that have audio files
             answers = Answer.objects.filter(
                 question__interview=interview,
                 audio_file__isnull=False
@@ -617,11 +696,13 @@ class TwilioAnswerWebhookView(View):
             transcript = None
             score = None
             try:
-                transcript_response = openai.audio.transcriptions.create(
-                    model="gpt-4o-mini-transcribe",  # Whisper model
-                    file=requests.get(recording_url + ".mp3", stream=True).raw
-                )
-                transcript = transcript_response.text.strip()
+                # transcript_response = openai.audio.transcriptions.create(
+                #     model="gpt-4o-mini-transcribe",  # Whisper model
+                #     file=requests.get(recording_url + ".mp3", stream=True).raw
+                # )
+                # transcript = transcript_response.text.strip()
+                from .utils import process_wav_to_transcript
+                transcript = process_wav_to_transcript(recording_url + ".mp3")
                 print(f"Transcript: {transcript}")
 
                 # Evaluate transcript (score 1–10)
@@ -722,6 +803,124 @@ class DebugTranscriptionView(APIView):
                     'status': connection_ok,
                     'message': connection_msg
                 }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class EvaluateInterviewView(APIView):
+    """Manually trigger complete evaluation for an interview (transcripts + scoring + recommendation)"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request, interview_id):
+        if not validate_api_key(request):
+            return Response({'error': 'Invalid API key'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            interview = get_object_or_404(Interview, id=interview_id)
+            
+            # Track evaluation progress
+            evaluation_results = {
+                'transcripts_generated': 0,
+                'answers_scored': 0,
+                'recommendation_generated': False,
+                'errors': []
+            }
+            
+            # Step 1: Generate transcripts for all answers that need them
+            print(f"Step 1: Generating transcripts for interview {interview_id}")
+            for question in interview.questions.all():
+                answer = question.answers.first()
+                if answer and answer.audio_file:
+                    if not answer.transcript:
+                        try:
+                            print(f"Generating transcript for question {question.question_number}")
+                            transcript = generate_transcript_from_audio(answer)
+                            if transcript:
+                                evaluation_results['transcripts_generated'] += 1
+                                print(f"✓ Transcript generated for question {question.question_number}")
+                            else:
+                                evaluation_results['errors'].append(f"Failed to generate transcript for question {question.question_number}")
+                        except Exception as e:
+                            error_msg = f"Error generating transcript for question {question.question_number}: {str(e)}"
+                            evaluation_results['errors'].append(error_msg)
+                            print(f"✗ {error_msg}")
+                    else:
+                        print(f"✓ Transcript already exists for question {question.question_number}")
+            
+            # Step 2: Score all answers that have transcripts
+            print(f"Step 2: Scoring answers for interview {interview_id}")
+            for question in interview.questions.all():
+                answer = question.answers.first()
+                if answer and answer.transcript:
+                    try:
+                        print(f"Scoring answer for question {question.question_number}")
+                        score, feedback = score_answer(
+                            question.question_text,
+                            answer.transcript,
+                            interview.candidate.resume_text
+                        )
+                        
+                        # Update the answer
+                        answer.score = score
+                        answer.feedback = feedback
+                        answer.save()
+                        
+                        evaluation_results['answers_scored'] += 1
+                        print(f"✓ Answer scored for question {question.question_number}: {score}/10")
+                    except Exception as e:
+                        error_msg = f"Error scoring answer for question {question.question_number}: {str(e)}"
+                        evaluation_results['errors'].append(error_msg)
+                        print(f"✗ {error_msg}")
+            
+            # Step 3: Generate final recommendation
+            print(f"Step 3: Generating final recommendation for interview {interview_id}")
+            try:
+                recommendation = generate_final_recommendation(interview)
+                interview.recommendation = recommendation
+                interview.save()
+                evaluation_results['recommendation_generated'] = True
+                print(f"✓ Final recommendation generated")
+            except Exception as e:
+                error_msg = f"Error generating final recommendation: {str(e)}"
+                evaluation_results['errors'].append(error_msg)
+                print(f"✗ {error_msg}")
+            
+            # Step 4: Calculate statistics
+            total_questions = interview.questions.count()
+            answered_questions = 0
+            scored_questions = 0
+            total_score = 0
+            
+            for question in interview.questions.all():
+                answer = question.answers.first()
+                if answer and answer.transcript:
+                    answered_questions += 1
+                if answer and answer.score is not None:
+                    scored_questions += 1
+                    total_score += answer.score
+            
+            average_score = total_score / scored_questions if scored_questions > 0 else 0
+            
+            return Response({
+                'success': True,
+                'interview_id': interview.id,
+                'candidate_name': interview.candidate.name,
+                'evaluation_summary': {
+                    'total_questions': total_questions,
+                    'answered_questions': answered_questions,
+                    'scored_questions': scored_questions,
+                    'average_score': round(average_score, 2),
+                    'transcripts_generated': evaluation_results['transcripts_generated'],
+                    'answers_scored': evaluation_results['answers_scored'],
+                    'recommendation_generated': evaluation_results['recommendation_generated'],
+                    'errors': evaluation_results['errors'] if evaluation_results['errors'] else None
+                },
+                'message': f'Evaluation completed: {scored_questions}/{total_questions} questions scored, avg score: {average_score:.2f}/10'
             }, status=status.HTTP_200_OK)
             
         except Exception as e:

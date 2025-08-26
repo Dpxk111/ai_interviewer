@@ -42,7 +42,7 @@ def generate_questions_from_jd(job_description):
         
         questions_text = response.choices[0].message.content.strip()
         questions = json.loads(questions_text)
-        return questions[:1]
+        return questions[:2]
         
     except Exception as e:
         print(f"Error generating questions: {e}")
@@ -97,8 +97,8 @@ def score_answer(question, answer_transcript, resume_text=""):
         Return as JSON: {{"score": 8, "feedback": "Good answer with relevant examples"}}
         """
         
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an expert interviewer evaluating candidate responses."},
                 {"role": "user", "content": prompt}
@@ -109,11 +109,12 @@ def score_answer(question, answer_transcript, resume_text=""):
         
         result_text = response.choices[0].message.content.strip()
         result = json.loads(result_text)
+        print(result, "=========\n\n\n\n\n\n")
         return result.get('score', 5), result.get('feedback', 'No feedback available')
         
     except Exception as e:
         print(f"Error scoring answer: {e}")
-        return 5, "Unable to score answer"
+        return 10, str(e)
 
 
 def generate_final_recommendation(interview):
@@ -140,7 +141,6 @@ def generate_final_recommendation(interview):
         
         avg_score = total_score / answer_count
         
-        # Build AI prompt (OpenAI or other model)
         prompt = f"""
         You are evaluating an interview based on transcripts.
 
@@ -443,7 +443,6 @@ def convert_to_mp3_local(input_path, output_path):
 def generate_transcript_from_audio(answer_obj):
     """Generate transcript using AssemblyAI."""
     try:
-        # Check if AssemblyAI API key is available
         if not ASSEMBLYAI_API_KEY:
             print("ERROR: AssemblyAI API key not configured")
             return None
@@ -455,18 +454,15 @@ def generate_transcript_from_audio(answer_obj):
         if answer_obj.transcript:
             return answer_obj.transcript
 
-        # Local path of the original audio
         audio_path = answer_obj.audio_file.path
         
         print(f"Processing audio file: {audio_path}")
         print(f"File exists: {os.path.exists(audio_path)}")
         print(f"File size: {os.path.getsize(audio_path) if os.path.exists(audio_path) else 'N/A'}")
 
-        # Validate the audio file
         is_valid, validation_msg = validate_audio_file(audio_path)
         if not is_valid:
             print(f"Audio file validation failed: {validation_msg}")
-            # Run debug function to get more info
             debug_audio_file(answer_obj)
             return None
         
@@ -715,3 +711,244 @@ def debug_audio_file(answer_obj):
         print(f"Error in debug_audio_file: {e}")
         import traceback
         traceback.print_exc()
+
+
+def process_wav_to_transcript(wav_file_path, output_mp3_path=None):
+    """
+    Convert a WAV file to MP3 and generate transcript using AssemblyAI.
+    
+    Args:
+        wav_file_path (str): Path to the input WAV file
+        output_mp3_path (str, optional): Path for the output MP3 file. 
+                                       If None, will create in same directory as WAV file
+    
+    Returns:
+        dict: Dictionary containing:
+            - 'success' (bool): Whether the process was successful
+            - 'transcript' (str): The generated transcript text
+            - 'mp3_path' (str): Path to the converted MP3 file
+            - 'error' (str): Error message if failed
+            - 'processing_time' (float): Time taken for the entire process
+    """
+    import time
+    start_time = time.time()
+    
+    try:
+        # Validate input file
+        if not os.path.exists(wav_file_path):
+            return {
+                'success': False,
+                'transcript': None,
+                'mp3_path': None,
+                'error': f'Input WAV file not found: {wav_file_path}',
+                'processing_time': time.time() - start_time
+            }
+        
+        if not wav_file_path.lower().endswith('.wav'):
+            return {
+                'success': False,
+                'transcript': None,
+                'mp3_path': None,
+                'error': f'Input file is not a WAV file: {wav_file_path}',
+                'processing_time': time.time() - start_time
+            }
+        
+        # Check AssemblyAI API key
+        if not ASSEMBLYAI_API_KEY:
+            return {
+                'success': False,
+                'transcript': None,
+                'mp3_path': None,
+                'error': 'AssemblyAI API key not configured',
+                'processing_time': time.time() - start_time
+            }
+        
+        print(f"Processing WAV file: {wav_file_path}")
+        
+        # Generate MP3 output path if not provided
+        if output_mp3_path is None:
+            output_mp3_path = wav_file_path.rsplit('.', 1)[0] + "_converted.mp3"
+        
+        # Step 1: Convert WAV to MP3
+        print("Step 1: Converting WAV to MP3...")
+        try:
+            convert_to_mp3_local(wav_file_path, output_mp3_path)
+            print(f"✓ WAV to MP3 conversion successful: {output_mp3_path}")
+        except Exception as e:
+            return {
+                'success': False,
+                'transcript': None,
+                'mp3_path': None,
+                'error': f'Failed to convert WAV to MP3: {str(e)}',
+                'processing_time': time.time() - start_time
+            }
+        
+        # Step 2: Upload MP3 to AssemblyAI
+        print("Step 2: Uploading MP3 to AssemblyAI...")
+        try:
+            with open(output_mp3_path, "rb") as f:
+                upload_response = requests.post(
+                    "https://api.assemblyai.com/v2/upload",
+                    headers={"authorization": ASSEMBLYAI_API_KEY},
+                    files={"file": f}
+                )
+            
+            if upload_response.status_code != 200:
+                return {
+                    'success': False,
+                    'transcript': None,
+                    'mp3_path': output_mp3_path,
+                    'error': f'AssemblyAI upload failed: {upload_response.status_code} - {upload_response.text}',
+                    'processing_time': time.time() - start_time
+                }
+                
+            audio_url = upload_response.json()["upload_url"]
+            print(f"✓ MP3 uploaded to AssemblyAI: {audio_url}")
+        except Exception as e:
+            return {
+                'success': False,
+                'transcript': None,
+                'mp3_path': output_mp3_path,
+                'error': f'Failed to upload to AssemblyAI: {str(e)}',
+                'processing_time': time.time() - start_time
+            }
+        
+        # Step 3: Request transcription
+        print("Step 3: Requesting transcription...")
+        try:
+            transcript_response = requests.post(
+                "https://api.assemblyai.com/v2/transcript",
+                headers={"authorization": ASSEMBLYAI_API_KEY},
+                json={
+                    "audio_url": audio_url,
+                    "auto_chapters": False,
+                    "speaker_labels": False,
+                    "punctuate": True,
+                    "format_text": True
+                }
+            )
+            
+            if transcript_response.status_code != 200:
+                return {
+                    'success': False,
+                    'transcript': None,
+                    'mp3_path': output_mp3_path,
+                    'error': f'Transcription request failed: {transcript_response.status_code} - {transcript_response.text}',
+                    'processing_time': time.time() - start_time
+                }
+                
+            transcript_id = transcript_response.json()["id"]
+            print(f"✓ Transcription requested, ID: {transcript_id}")
+        except Exception as e:
+            return {
+                'success': False,
+                'transcript': None,
+                'mp3_path': output_mp3_path,
+                'error': f'Failed to request transcription: {str(e)}',
+                'processing_time': time.time() - start_time
+            }
+        
+        # Step 4: Poll for transcription completion
+        print("Step 4: Waiting for transcription to complete...")
+        max_attempts = 60  # 5 minutes max
+        attempts = 0
+        
+        while attempts < max_attempts:
+            try:
+                status_response = requests.get(
+                    f"https://api.assemblyai.com/v2/transcript/{transcript_id}",
+                    headers={"authorization": ASSEMBLYAI_API_KEY}
+                ).json()
+
+                status = status_response.get('status')
+                print(f"Transcription status: {status}")
+
+                if status == "completed":
+                    transcript_text = status_response.get("text", "")
+                    if transcript_text:
+                        print(f"✓ Transcription completed successfully")
+                        print(f"Transcript: {transcript_text[:100]}...")
+                        
+                        return {
+                            'success': True,
+                            'transcript': transcript_text,
+                            'mp3_path': output_mp3_path,
+                            'error': None,
+                            'processing_time': time.time() - start_time
+                        }
+                    else:
+                        return {
+                            'success': False,
+                            'transcript': None,
+                            'mp3_path': output_mp3_path,
+                            'error': 'Transcription completed but no text returned',
+                            'processing_time': time.time() - start_time
+                        }
+
+                elif status == "error":
+                    error_msg = status_response.get('error', 'Unknown error')
+                    return {
+                        'success': False,
+                        'transcript': None,
+                        'mp3_path': output_mp3_path,
+                        'error': f'AssemblyAI transcription error: {error_msg}',
+                        'processing_time': time.time() - start_time
+                    }
+
+                attempts += 1
+                time.sleep(3)  # Wait 3 seconds between polls
+
+            except Exception as e:
+                print(f"Error polling transcription status: {e}")
+                attempts += 1
+                time.sleep(3)
+        
+        # If we get here, polling timed out
+        return {
+            'success': False,
+            'transcript': None,
+            'mp3_path': output_mp3_path,
+            'error': 'Transcription polling timed out after 5 minutes',
+            'processing_time': time.time() - start_time
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'transcript': None,
+            'mp3_path': output_mp3_path if 'output_mp3_path' in locals() else None,
+            'error': f'Unexpected error: {str(e)}',
+            'processing_time': time.time() - start_time
+        }
+    finally:
+        # Clean up temporary MP3 file if it was created in the same directory
+        try:
+            if ('output_mp3_path' in locals() and 
+                output_mp3_path and 
+                os.path.exists(output_mp3_path) and
+                output_mp3_path.endswith('_converted.mp3')):
+                os.remove(output_mp3_path)
+                print(f"Cleaned up temporary MP3 file: {output_mp3_path}")
+        except Exception as e:
+            print(f"Warning: Could not clean up temporary MP3 file: {e}")
+
+
+def test_assemblyai_connection():
+    """Test AssemblyAI API connection"""
+    try:
+        if not ASSEMBLYAI_API_KEY:
+            return False, "AssemblyAI API key not configured"
+        
+        # Make a simple API call to test connection
+        response = requests.get(
+            "https://api.assemblyai.com/v2/transcript",
+            headers={"authorization": ASSEMBLYAI_API_KEY}
+        )
+        
+        if response.status_code == 200:
+            return True, "AssemblyAI connection successful"
+        else:
+            return False, f"AssemblyAI connection failed: {response.status_code} - {response.text}"
+            
+    except Exception as e:
+        return False, f"AssemblyAI connection error: {str(e)}"

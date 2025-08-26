@@ -233,3 +233,8 @@ dmypy.json
 
 # Pyre
 .pyre/
+
+
+# Media / uploads
+media/
+uploads/

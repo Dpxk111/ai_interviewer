@@ -65,10 +65,9 @@ class InterviewResultSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Interview
-        fields = ["id", "candidate_name", "questions"]
+        fields = ["id", "candidate_name", "questions", "recommendation"]
 
     def get_questions(self, obj):
-        print("00000000000000")
         questions_data = []
         request = self.context.get("request")
 
@@ -76,25 +75,18 @@ class InterviewResultSerializer(serializers.ModelSerializer):
             answer = question.answers.first()
 
             transcript = None
-            print(answer.transcript, "123213213123123\n\n\n\n")
-            print(answer.audio_file, "123213213123123\n\n\n\n")
             if answer:
-                print("11111111111111")
                 if not answer.transcript:
                     # transcript = generate_transcript_from_audio(answer)
                     pass
                 else:
                     transcript = answer.transcript
-                print("22222222222222")
 
             audio_url = None
             if answer and answer.audio_file:
-                print("44444444444444")
                 if request:
-                    print("55555555555555")
                     audio_url = request.build_absolute_uri(answer.audio_file.url)
                 else:
-                    print("66666666666666")
                     audio_url = answer.audio_file.url
 
             questions_data.append({

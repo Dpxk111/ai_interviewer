@@ -31,4 +31,7 @@ urlpatterns = [
     
     # Debug endpoints
     path('debug/transcription/<uuid:answer_id>/', views.DebugTranscriptionView.as_view(), name='debug_transcription'),
+    
+    # Evaluation endpoints
+    path('interviews/<uuid:interview_id>/evaluate/', views.EvaluateInterviewView.as_view(), name='evaluate_interview'),
 ]
