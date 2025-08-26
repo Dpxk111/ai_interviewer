@@ -9,6 +9,7 @@ from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse
 import requests
 import json
+import random
 
 # Initialize OpenAI client
 openai.api_key = settings.OPENAI_API_KEY
@@ -42,7 +43,9 @@ def generate_questions_from_jd(job_description):
         
         questions_text = response.choices[0].message.content.strip()
         questions = json.loads(questions_text)
-        return questions[:2]
+        ls = [5, 6, 7]
+        number_of_questions = random.choice(ls)
+        return questions[:number_of_questions]
         
     except Exception as e:
         print(f"Error generating questions: {e}")
