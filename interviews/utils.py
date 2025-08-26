@@ -112,7 +112,6 @@ def score_answer(question, answer_transcript, resume_text=""):
         
         result_text = response.choices[0].message.content.strip()
         result = json.loads(result_text)
-        print(result, "=========\n\n\n\n\n\n")
         return result.get('score', 5), result.get('feedback', 'No feedback available')
         
     except Exception as e:

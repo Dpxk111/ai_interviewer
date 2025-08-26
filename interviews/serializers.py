@@ -77,7 +77,6 @@ class InterviewResultSerializer(serializers.ModelSerializer):
             transcript = None
             if answer:
                 if not answer.transcript:
-                    # transcript = generate_transcript_from_audio(answer)
                     pass
                 else:
                     transcript = answer.transcript
@@ -95,7 +94,6 @@ class InterviewResultSerializer(serializers.ModelSerializer):
                 "answer": {
                     "transcript": transcript if transcript else "",
                     "score": answer.score if answer else None,
-                    "feedback": answer.feedback if answer else "",
                     "audio_url": audio_url,
                     "audio_duration": getattr(answer, "audio_duration", None) if answer else None,
                 } if answer else None
