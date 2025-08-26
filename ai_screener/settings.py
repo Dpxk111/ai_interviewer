@@ -162,7 +162,10 @@ TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
 WHITELISTED_NUMBERS = ["*"]
 
 # Base URL for webhooks (update with your domain)
-BASE_URL = os.getenv('BASE_URL', 'http://localhost:8000')
+if DEBUG:
+    BASE_URL = os.getenv('LOCALBASE_URL', 'http://localhost:8000')
+else:
+    BASE_URL = os.getenv('BASE_URL')
 
 # Media files
 MEDIA_URL = '/media/'

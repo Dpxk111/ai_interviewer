@@ -57,40 +57,57 @@ class InterviewCreateSerializer(serializers.ModelSerializer):
         model = Interview
         fields = ['job_description', 'candidate']
 
+
+from .utils import generate_transcript_from_audio
 class InterviewResultSerializer(serializers.ModelSerializer):
+    candidate_name = serializers.CharField(source='candidate.name', read_only=True)
     questions = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Interview
-        fields = [
-            'id', 'status', 'final_score', 'recommendation', 'questions',
-            'created_at'
-        ]
-    
+        fields = ["id", "candidate_name", "questions"]
+
     def get_questions(self, obj):
+        print("00000000000000")
         questions_data = []
-        request = self.context.get('request')
-        
+        request = self.context.get("request")
+
         for question in obj.questions.all():
             answer = question.answers.first()
-            
-            # Get audio URL with full path
+
+            transcript = None
+            print(answer.transcript, "123213213123123\n\n\n\n")
+            print(answer.audio_file, "123213213123123\n\n\n\n")
+            if answer:
+                print("11111111111111")
+                if not answer.transcript:
+                    # transcript = generate_transcript_from_audio(answer)
+                    pass
+                else:
+                    transcript = answer.transcript
+                print("22222222222222")
+
             audio_url = None
             if answer and answer.audio_file:
+                print("44444444444444")
                 if request:
+                    print("55555555555555")
                     audio_url = request.build_absolute_uri(answer.audio_file.url)
                 else:
+                    print("66666666666666")
                     audio_url = answer.audio_file.url
-            
+
             questions_data.append({
-                'question_number': question.question_number,
-                'question_text': question.question_text,
-                'answer': {
-                    'transcript': answer.transcript if answer else '',
-                    'score': answer.score if answer else None,
-                    'feedback': answer.feedback if answer else '',
-                    'audio_url': audio_url,
-                    'audio_duration': getattr(answer, 'audio_duration', None) if answer else None,
+                "question_number": question.question_number,
+                "question_text": question.question_text,
+                "answer": {
+                    "transcript": transcript if transcript else "",
+                    "score": answer.score if answer else None,
+                    "feedback": answer.feedback if answer else "",
+                    "audio_url": audio_url,
+                    "audio_duration": getattr(answer, "audio_duration", None) if answer else None,
                 } if answer else None
             })
         return questions_data
+
+

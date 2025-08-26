@@ -82,5 +82,6 @@ class Answer(models.Model):
     feedback = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+
     def __str__(self):
         return f"Answer to Q{self.question.question_number} - {self.transcript[:50]}..."

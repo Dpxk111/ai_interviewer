@@ -30,8 +30,8 @@ def generate_questions_from_jd(job_description):
         Example format: ["Question 1", "Question 2", "Question 3"]
         """
         
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an expert HR professional who creates relevant interview questions."},
                 {"role": "user", "content": prompt}
@@ -41,13 +41,11 @@ def generate_questions_from_jd(job_description):
         )
         
         questions_text = response.choices[0].message.content.strip()
-        # Extract JSON array from response
         questions = json.loads(questions_text)
-        return questions[:7]  # Ensure max 7 questions
+        return questions[:1]
         
     except Exception as e:
         print(f"Error generating questions: {e}")
-        # Fallback questions
         return [
             "Tell me about your relevant experience for this role.",
             "What are your key strengths that would benefit this position?",
@@ -117,6 +115,7 @@ def score_answer(question, answer_transcript, resume_text=""):
         print(f"Error scoring answer: {e}")
         return 5, "Unable to score answer"
 
+
 def generate_final_recommendation(interview):
     """Generate final recommendation based on all answers"""
     try:
@@ -129,31 +128,34 @@ def generate_final_recommendation(interview):
             if answer:
                 questions_answers.append({
                     'question': question.question_text,
-                    'answer': answer.transcript,
-                    'score': answer.score
+                    'answer': answer.transcript or "No transcript available",
+                    'score': answer.score if answer.score is not None else "Not evaluated"
                 })
-                total_score += answer.score or 0
-                answer_count += 1
+                if answer.score is not None:
+                    total_score += answer.score
+                    answer_count += 1
         
         if answer_count == 0:
             return "No answers provided for evaluation."
         
         avg_score = total_score / answer_count
         
+        # Build AI prompt (OpenAI or other model)
         prompt = f"""
-        Based on the interview responses, provide a final recommendation.
-        
-        Average Score: {avg_score}/10
+        You are evaluating an interview based on transcripts.
+
+        Average Score: {avg_score:.2f}/10
         Total Questions Answered: {answer_count}
-        
-        Questions and Answers:
+
+        Here are the interview transcripts with scores:
         {json.dumps(questions_answers, indent=2)}
-        
-        Provide a brief recommendation (2-3 sentences) on whether to proceed with the candidate.
+
+        Based on the above, provide a final recommendation in 2-3 sentences 
+        on whether the candidate should proceed to the next round.
         """
         
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an HR professional providing interview recommendations."},
                 {"role": "user", "content": prompt}
@@ -219,8 +221,8 @@ def create_twilio_call(interview):
         twiml_url = f"{settings.BASE_URL}/api/webhook/interview/{interview.id}/twiml/"
         status_callback_url = f"{settings.BASE_URL}/api/webhook/interview/{interview.id}/status/"
         
-        print(f"TwiML URL: {twiml_url}")
-        print(f"Status callback URL: {status_callback_url}")
+        print(f"TwiML URL: {twiml_url} \n\n")
+        print(f"Status callback URL: {status_callback_url} \n\n")
         
         call = twilio_client.calls.create(
             url=twiml_url,
@@ -294,3 +296,422 @@ def generate_interview_twiml(interview):
         error_response = VoiceResponse()
         error_response.say("We are sorry, an error occurred while generating the interview. Please try again later.", voice='alice')
         return str(error_response)
+
+
+import os
+import requests
+from django.conf import settings
+
+ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
+
+# Validate AssemblyAI API key
+if not ASSEMBLYAI_API_KEY:
+    print("WARNING: ASSEMBLYAI_API_KEY not found in environment variables")
+
+def test_assemblyai_connection():
+    """Test if AssemblyAI API is accessible"""
+    try:
+        if not ASSEMBLYAI_API_KEY:
+            return False, "AssemblyAI API key not configured"
+        
+        # Test with a simple API call
+        response = requests.get(
+            "https://api.assemblyai.com/v2/transcript",
+            headers={"authorization": ASSEMBLYAI_API_KEY},
+            params={"limit": 1}
+        )
+        
+        if response.status_code == 200:
+            return True, "AssemblyAI API connection successful"
+        elif response.status_code == 401:
+            return False, "AssemblyAI API key is invalid"
+        else:
+            return False, f"AssemblyAI API error: {response.status_code}"
+            
+    except Exception as e:
+        return False, f"AssemblyAI API connection failed: {str(e)}"
+
+def validate_audio_file(file_path):
+    """Validate that a file is a valid audio file"""
+    try:
+        if not os.path.exists(file_path):
+            return False, "File does not exist"
+        
+        file_size = os.path.getsize(file_path)
+        if file_size == 0:
+            return False, "File is empty"
+        
+        if file_size < 1024:  # Less than 1KB
+            return False, "File is too small to be valid audio"
+        
+        # Try to load with pydub to validate it's audio
+        try:
+            sound = AudioSegment.from_file(file_path)
+            if len(sound) < 100:  # Less than 100ms
+                return False, "Audio duration is too short"
+            return True, f"Valid audio file: {len(sound)}ms, {sound.channels} channels, {sound.frame_rate}Hz"
+        except Exception as e:
+            return False, f"Not a valid audio file: {str(e)}"
+            
+    except Exception as e:
+        return False, f"Error validating file: {str(e)}"  
+
+
+
+from pydub import AudioSegment
+import requests
+import time
+
+def convert_to_wav_local(input_path, output_path):
+    """Convert any audio file to WAV PCM16 16kHz mono"""
+    try:
+        print(f"Converting {input_path} to {output_path}")
+        
+        # Check if input file exists and has content
+        if not os.path.exists(input_path):
+            raise FileNotFoundError(f"Input file not found: {input_path}")
+        
+        file_size = os.path.getsize(input_path)
+        if file_size == 0:
+            raise ValueError(f"Input file is empty: {input_path}")
+        
+        print(f"Input file size: {file_size} bytes")
+        
+        # Try to load the audio file
+        sound = AudioSegment.from_file(input_path)
+        print(f"Audio loaded - duration: {len(sound)}ms, channels: {sound.channels}, frame_rate: {sound.frame_rate}")
+        
+        # Convert to mono, 16kHz, 16-bit
+        sound = sound.set_channels(1).set_frame_rate(16000).set_sample_width(2)
+        print(f"Converted audio - duration: {len(sound)}ms, channels: {sound.channels}, frame_rate: {sound.frame_rate}")
+        
+        # Export to WAV
+        sound.export(output_path, format="wav")
+        
+        # Verify output file
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            print(f"Successfully converted to {output_path} (size: {os.path.getsize(output_path)} bytes)")
+            return output_path
+        else:
+            raise ValueError(f"Output file creation failed: {output_path}")
+            
+    except Exception as e:
+        print(f"Error in convert_to_wav_local: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+def convert_to_mp3_local(input_path, output_path):
+    """Convert any audio file to MP3 format"""
+    try:
+        print(f"Converting {input_path} to MP3: {output_path}")
+        
+        # Check if input file exists and has content
+        if not os.path.exists(input_path):
+            raise FileNotFoundError(f"Input file not found: {input_path}")
+        
+        file_size = os.path.getsize(input_path)
+        if file_size == 0:
+            raise ValueError(f"Input file is empty: {input_path}")
+        
+        print(f"Input file size: {file_size} bytes")
+        
+        # Try to load the audio file
+        sound = AudioSegment.from_file(input_path)
+        print(f"Audio loaded - duration: {len(sound)}ms, channels: {sound.channels}, frame_rate: {sound.frame_rate}")
+        
+        # Convert to mono, 44.1kHz for better compatibility
+        sound = sound.set_channels(1).set_frame_rate(44100)
+        print(f"Converted audio - duration: {len(sound)}ms, channels: {sound.channels}, frame_rate: {sound.frame_rate}")
+        
+        # Export to MP3 with good quality
+        sound.export(output_path, format="mp3", bitrate="128k")
+        
+        # Verify output file
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            print(f"Successfully converted to MP3: {output_path} (size: {os.path.getsize(output_path)} bytes)")
+            return output_path
+        else:
+            raise ValueError(f"MP3 file creation failed: {output_path}")
+            
+    except Exception as e:
+        print(f"Error in convert_to_mp3_local: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+def generate_transcript_from_audio(answer_obj):
+    """Generate transcript using AssemblyAI."""
+    try:
+        # Check if AssemblyAI API key is available
+        if not ASSEMBLYAI_API_KEY:
+            print("ERROR: AssemblyAI API key not configured")
+            return None
+            
+        if not answer_obj.audio_file:
+            return None
+
+        # Return existing transcript if available
+        if answer_obj.transcript:
+            return answer_obj.transcript
+
+        # Local path of the original audio
+        audio_path = answer_obj.audio_file.path
+        
+        print(f"Processing audio file: {audio_path}")
+        print(f"File exists: {os.path.exists(audio_path)}")
+        print(f"File size: {os.path.getsize(audio_path) if os.path.exists(audio_path) else 'N/A'}")
+
+        # Validate the audio file
+        is_valid, validation_msg = validate_audio_file(audio_path)
+        if not is_valid:
+            print(f"Audio file validation failed: {validation_msg}")
+            # Run debug function to get more info
+            debug_audio_file(answer_obj)
+            return None
+        
+        print(f"Audio file validation passed: {validation_msg}")
+
+        # Convert to MP3 format
+        mp3_path = audio_path.rsplit('.', 1)[0] + "_converted.mp3"
+        try:
+            convert_to_mp3_local(audio_path, mp3_path)
+            print(f"Converted to MP3: {mp3_path}")
+        except Exception as e:
+            print(f"Error converting audio: {e}")
+            # Try uploading original file if conversion fails
+            mp3_path = audio_path
+
+        # Upload to AssemblyAI
+        try:
+            with open(mp3_path, "rb") as f:
+                upload_response = requests.post(
+                    "https://api.assemblyai.com/v2/upload",
+                    headers={"authorization": ASSEMBLYAI_API_KEY},
+                    files={"file": f}
+                )
+            
+            if upload_response.status_code != 200:
+                print(f"Upload failed: {upload_response.status_code} - {upload_response.text}")
+                return None
+                
+            audio_url = upload_response.json()["upload_url"]
+            print(f"Uploaded to AssemblyAI: {audio_url}")
+        except Exception as e:
+            print(f"Error uploading to AssemblyAI: {e}")
+            return None
+
+        # Request transcription
+        try:
+            transcript_response = requests.post(
+                "https://api.assemblyai.com/v2/transcript",
+                headers={"authorization": ASSEMBLYAI_API_KEY},
+                json={"audio_url": audio_url}
+            )
+            
+            if transcript_response.status_code != 200:
+                print(f"Transcription request failed: {transcript_response.status_code} - {transcript_response.text}")
+                return None
+                
+            transcript_id = transcript_response.json()["id"]
+            print(f"Transcription ID: {transcript_id}")
+        except Exception as e:
+            print(f"Error requesting transcription: {e}")
+            return None
+
+        # Poll until transcription is done
+        max_attempts = 60  # 5 minutes max
+        attempts = 0
+        
+        while attempts < max_attempts:
+            try:
+                status_response = requests.get(
+                    f"https://api.assemblyai.com/v2/transcript/{transcript_id}",
+                    headers={"authorization": ASSEMBLYAI_API_KEY}
+                ).json()
+
+                print(f"Transcription status: {status_response.get('status')}")
+
+                if status_response["status"] == "completed":
+                    transcript_text = status_response["text"]
+                    if transcript_text:
+                        # Save transcript in DB
+                        answer_obj.transcript = transcript_text
+                        answer_obj.save(update_fields=["transcript"])
+                        print(f"Transcript saved: {transcript_text[:100]}...")
+                        return transcript_text
+                    else:
+                        print("Transcription completed but no text returned")
+                        return None
+
+                elif status_response["status"] == "error":
+                    error_msg = status_response.get('error', 'Unknown error')
+                    print(f"AssemblyAI error: {error_msg}")
+                    
+                    # Check for specific transcoding error
+                    if "Transcoding failed" in error_msg and "application/octet-stream" in error_msg:
+                        print("Detected audio format issue. Trying fallback method...")
+                        return generate_transcript_fallback(answer_obj, audio_path)
+                    
+                    return None
+
+                attempts += 1
+                time.sleep(3)
+
+            except Exception as e:
+                print(f"Error polling transcription status: {e}")
+                attempts += 1
+                time.sleep(3)
+
+        print("Transcription polling timed out")
+        return None
+
+    except Exception as e:
+        print(f"Error generating transcript with AssemblyAI: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Try fallback method - upload original file directly
+        print("Trying fallback method with original file...")
+        try:
+            return generate_transcript_fallback(answer_obj, audio_path)
+        except Exception as fallback_error:
+            print(f"Fallback method also failed: {fallback_error}")
+            return None
+    finally:
+        # Clean up temporary MP3 file if it was created
+        try:
+            if 'mp3_path' in locals() and mp3_path != audio_path and os.path.exists(mp3_path):
+                os.remove(mp3_path)
+                print(f"Cleaned up temporary file: {mp3_path}")
+        except Exception as e:
+            print(f"Error cleaning up temporary file: {e}")
+
+def generate_transcript_fallback(answer_obj, audio_path):
+    """Fallback method to generate transcript using original file"""
+    try:
+        print(f"Using fallback method with file: {audio_path}")
+        
+        # Upload original file directly to AssemblyAI
+        with open(audio_path, "rb") as f:
+            upload_response = requests.post(
+                "https://api.assemblyai.com/v2/upload",
+                headers={"authorization": ASSEMBLYAI_API_KEY},
+                files={"file": f}
+            )
+        
+        if upload_response.status_code != 200:
+            print(f"Fallback upload failed: {upload_response.status_code} - {upload_response.text}")
+            return None
+            
+        audio_url = upload_response.json()["upload_url"]
+        print(f"Fallback upload successful: {audio_url}")
+
+        # Request transcription with different parameters
+        transcript_response = requests.post(
+            "https://api.assemblyai.com/v2/transcript",
+            headers={"authorization": ASSEMBLYAI_API_KEY},
+            json={
+                "audio_url": audio_url,
+                "auto_chapters": False,
+                "speaker_labels": False,
+                "punctuate": True,
+                "format_text": True
+            }
+        )
+        
+        if transcript_response.status_code != 200:
+            print(f"Fallback transcription request failed: {transcript_response.status_code} - {transcript_response.text}")
+            return None
+            
+        transcript_id = transcript_response.json()["id"]
+        print(f"Fallback transcription ID: {transcript_id}")
+
+        # Poll until transcription is done
+        max_attempts = 30  # 2.5 minutes max for fallback
+        attempts = 0
+        
+        while attempts < max_attempts:
+            try:
+                status_response = requests.get(
+                    f"https://api.assemblyai.com/v2/transcript/{transcript_id}",
+                    headers={"authorization": ASSEMBLYAI_API_KEY}
+                ).json()
+
+                print(f"Fallback transcription status: {status_response.get('status')}")
+
+                if status_response["status"] == "completed":
+                    transcript_text = status_response["text"]
+                    if transcript_text:
+                        # Save transcript in DB
+                        answer_obj.transcript = transcript_text
+                        answer_obj.save(update_fields=["transcript"])
+                        print(f"Fallback transcript saved: {transcript_text[:100]}...")
+                        return transcript_text
+                    else:
+                        print("Fallback transcription completed but no text returned")
+                        return None
+
+                elif status_response["status"] == "error":
+                    error_msg = status_response.get('error', 'Unknown error')
+                    print(f"Fallback AssemblyAI error: {error_msg}")
+                    return None
+
+                attempts += 1
+                time.sleep(3)
+
+            except Exception as e:
+                print(f"Error polling fallback transcription status: {e}")
+                attempts += 1
+                time.sleep(3)
+
+        print("Fallback transcription polling timed out")
+        return None
+
+    except Exception as e:
+        print(f"Error in fallback transcription: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def debug_audio_file(answer_obj):
+    """Debug function to analyze audio file issues"""
+    try:
+        if not answer_obj.audio_file:
+            print("No audio file attached to answer")
+            return
+        
+        audio_path = answer_obj.audio_file.path
+        print(f"\n=== Audio File Debug Info ===")
+        print(f"File path: {audio_path}")
+        print(f"File exists: {os.path.exists(audio_path)}")
+        
+        if os.path.exists(audio_path):
+            print(f"File size: {os.path.getsize(audio_path)} bytes")
+            print(f"File permissions: {oct(os.stat(audio_path).st_mode)[-3:]}")
+            
+            # Check file header
+            with open(audio_path, 'rb') as f:
+                header = f.read(16)
+                print(f"File header (hex): {header.hex()}")
+                
+                # Check for common audio file signatures
+                if header.startswith(b'RIFF'):
+                    print("Detected WAV file signature")
+                elif header.startswith(b'ID3') or header.startswith(b'\xff\xfb'):
+                    print("Detected MP3 file signature")
+                elif header.startswith(b'OggS'):
+                    print("Detected OGG file signature")
+                else:
+                    print("Unknown file format")
+        
+        # Try to validate with pydub
+        is_valid, validation_msg = validate_audio_file(audio_path)
+        print(f"Pydub validation: {validation_msg}")
+        
+        print("=== End Debug Info ===\n")
+        
+    except Exception as e:
+        print(f"Error in debug_audio_file: {e}")
+        import traceback
+        traceback.print_exc()
